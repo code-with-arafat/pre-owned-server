@@ -352,6 +352,112 @@ app.patch('/orders/:id', verifyToken, async (req, res) => {
     }
 });
 
+// ==========================================
+// ADMIN DASHBOARD & ANALYTICS APIS
+// ==========================================
+
+// ১. প্ল্যাটফর্মের ওভারঅল স্ট্যাটিস্টিকস (Home Page & Admin Dashboard-এর জন্য)
+// Public/Private Route
+app.get('/admin-stats', async (req, res) => {
+    try {
+        const totalUsers = await usersCollection.estimatedDocumentCount();
+        const totalProducts = await productsCollection.estimatedDocumentCount();
+        const totalOrders = await ordersCollection.estimatedDocumentCount();
+        
+        // মোট কত টাকা সেল হয়েছে (Revenue) তা বের করার লজিক
+        const payments = await paymentsCollection.find().toArray();
+        const totalRevenue = payments.reduce((sum, payment) => sum + payment.amount, 0);
+
+        // সেলারদের জন্য আলাদা কাউন্ট (অপশনাল কিন্তু ড্যাশবোর্ডের জন্য জোস)
+        const totalSellers = await usersCollection.countDocuments({ role: 'seller' });
+        const totalBuyers = await usersCollection.countDocuments({ role: 'buyer' });
+
+        res.send({
+            totalUsers,
+            totalProducts,
+            totalOrders,
+            totalRevenue,
+            totalSellers,
+            totalBuyers
+        });
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+} );
+
+// ২. ক্যাটাগরি ভিত্তিক প্রোডাক্টের সংখ্যা (Admin & Seller Charts-এর জন্য ডাইনামিক ডেটা)
+app.get('/category-stats', async (req, res) => {
+    try {
+        const stats = await productsCollection.aggregate([
+            {
+                $group: {
+                    _id: '$category',
+                    count: { $sum: 1 }
+                }
+            }
+        ]).toArray();
+        
+        res.send(stats);
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
+// ৩. সব ইউজারদের লিস্ট দেখা (Admin Only)
+app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const result = await usersCollection.find().toArray();
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
+// ৪. ইউজারের স্ট্যাটাস আপডেট করা (Block/Unblock User - Admin Only)
+app.patch('/users/status/:id', verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const id = req.params.id;
+        const { status } = req.body; // 'active' ba 'blocked' আসবে
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+            $set: { status: status }
+        };
+        const result = await usersCollection.updateOne(filter, updateDoc);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
+// ৫. ইউজার অ্যাকাউন্ট ডিলিট করা (Admin Only)
+app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await usersCollection.deleteOne(query);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
+// ৬. প্রোডাক্ট রিভিউ/মডারেশন করা (Approve/Reject Product - Admin Only)
+app.patch('/products/moderate/:id', verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const id = req.params.id;
+        const { status } = req.body; // 'available' (Approve) অথবা 'rejected' আসবে
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+            $set: { status: status }
+        };
+        const result = await productsCollection.updateOne(filter, updateDoc);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
+
     // Test Route
     app.get('/', (req, res) => {
         res.send('ReSell Hub Server is running smoothly!');
