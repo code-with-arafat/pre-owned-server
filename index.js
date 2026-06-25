@@ -231,6 +231,127 @@ app.get('/products/:id', async (req, res) => {
     }
 });
 
+// ==========================================
+// ORDERS & STRIPE PAYMENT APIS
+// ==========================================
+
+// ১. Stripe Payment Intent তৈরি করা (Checkout Page-এর জন্য)
+// Private Route
+app.post('/create-payment-intent', verifyToken, async (req, res) => {
+    try {
+        const { price } = req.body;
+        
+        // স্ট্রাইপ সেন্ট (cents)-এ হিসাব করে, তাই ১০০০ টাকা হলে ১০০০ * ১০০ দিতে হবে
+        const amount = parseInt(price * 100); 
+        
+        if (!price || amount < 1) {
+            return res.status(400).send({ message: 'Invalid price amount' });
+        }
+
+        // Create a PaymentIntent with the order amount and currency
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount,
+            currency: 'bdt', // অথবা 'usd' আপনার টেস্ট অ্যাকাউন্টের কারেন্সি অনুযায়ী
+            payment_method_types: ['card'],
+        });
+
+        res.send({
+            clientSecret: paymentIntent.client_secret,
+        });
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
+// ২. পেমেন্ট সাকসেসফুল হওয়ার পর অর্ডার ও পেমেন্ট হিস্ট্রি সেভ করা
+// Private Route
+app.post('/payments', verifyToken, async (req, res) => {
+    try {
+        const payment = req.body;
+        
+        // ক) পেমেন্ট কালেকশনে ট্রানজেকশন ডেটা ইনসার্ট করা
+        const paymentResult = await paymentsCollection.insertOne(payment);
+
+        // খ) অর্ডার কালেকশনে নতুন একটি সফল অর্ডার তৈরি করা
+        const orderData = {
+            buyerInfo: {
+                userId: payment.buyerId,
+                name: payment.buyerName,
+                email: payment.buyerEmail
+            },
+            sellerInfo: {
+                userId: payment.sellerId,
+                name: payment.sellerName,
+                email: payment.sellerEmail
+            },
+            productId: payment.productId,
+            transactionId: payment.transactionId,
+            amount: payment.amount,
+            paymentStatus: 'paid',
+            orderStatus: 'processing', // ডিফল্ট ফ্লো শুরু হলো
+            createdAt: new Date()
+        };
+        const orderResult = await ordersCollection.insertOne(orderData);
+
+        // গ) প্রোডাক্টের স্ট্যাটাস 'available' থেকে 'sold' করে দেওয়া যেন অন্য কেউ আর কিনতে না পারে
+        const filter = { _id: new ObjectId(payment.productId) };
+        const updateDoc = {
+            $set: { status: 'sold' }
+        };
+        await productsCollection.updateOne(filter, updateDoc);
+
+        res.send({ paymentResult, orderResult });
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
+// ৩. ক্রেতার নিজের পেমেন্ট হিস্ট্রি ও অর্ডার দেখা (My Orders / Payment History)
+app.get('/orders/buyer/:email', verifyToken, async (req, res) => {
+    try {
+        const email = req.params.email;
+        if (req.decoded.email !== email) {
+            return res.status(403).send({ message: 'Forbidden access' });
+        }
+        const query = { 'buyerInfo.email': email };
+        const result = await ordersCollection.find(query).toArray();
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
+// ৪. বিক্রেতার কাছে আসা অর্ডারগুলো দেখা (Manage Orders for Seller)
+app.get('/orders/seller/:email', verifyToken, async (req, res) => {
+    try {
+        const email = req.params.email;
+        if (req.decoded.email !== email) {
+            return res.status(403).send({ message: 'Forbidden access' });
+        }
+        const query = { 'sellerInfo.email': email };
+        const result = await ordersCollection.find(query).toArray();
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
+// ৫. অর্ডারের ডেলিভারি স্ট্যাটাস আপডেট করা (Pending -> Accepted -> Delivered)
+app.patch('/orders/:id', verifyToken, async (req, res) => {
+    try {
+        const id = req.params.id;
+        const { status } = req.body; // ফ্রন্টএন্ড থেকে 'processing', 'shipped' বা 'delivered' আসবে
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+            $set: { orderStatus: status }
+        };
+        const result = await ordersCollection.updateOne(filter, updateDoc);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+});
+
     // Test Route
     app.get('/', (req, res) => {
         res.send('ReSell Hub Server is running smoothly!');
