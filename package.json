@@ -4,21 +4,28 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "start": "node index.js",
-  "dev": "npx nodemon index.js"
-},
+    "start": "node index.js",
+    "dev": "npx nodemon index.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@stripe/react-stripe-js": "^6.6.0",
+    "@stripe/stripe-js": "^9.8.0",
+    "axios": "^1.18.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "framer-motion": "^12.42.0",
     "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^1.21.0",
     "mongodb": "^7.3.0",
-    "stripe": "^22.3.0"
+    "react-hook-form": "^7.80.0",
+    "stripe": "^22.3.0",
+    "sweetalert2": "^11.26.25"
   },
   "devDependencies": {
     "nodemo": "^1.0.0"
