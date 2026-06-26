@@ -8,7 +8,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const port = process.env.PORT || 5000;
 
-// ✅ ঝামেলাহীন ডাইনামিক CORS কনফিগারেশন
+// ✅ ডাইনামিক CORS কনফিগারেশন
 app.use(cors({
     origin: function (origin, callback) {
         callback(null, true);
@@ -26,7 +26,6 @@ const verifyToken = (req, res, next) => {
     }
 
     const token = req.headers.authorization.split(' ')[1];
-    // .env এর সিক্রেট কি না থাকলে ব্যাকআপ সিক্রেট ব্যবহার করবে যেন ক্র্যাশ না করে
     const secret = process.env.JWT_SECRET || 'fallback-secret-key-for-assignment';
 
     jwt.verify(token, secret, (err, decoded) => {
@@ -61,7 +60,7 @@ async function run() {
 
         console.log("Successfully connected to MongoDB!");
 
-        // Admin Verification Middleware (রোল বেসড অথরাইজেশন)
+        // Admin Verification Middleware
         const verifyAdmin = async (req, res, next) => {
             const email = req.decoded?.email;
             if (!email) {
@@ -87,7 +86,6 @@ async function run() {
             res.send({ token });
         });
 
-        // ১. ইউজার ক্রিয়েট বা সেভ করা (Upsert Mechanism)
         app.put('/users', async (req, res) => {
             try {
                 const user = req.body || {};
@@ -116,7 +114,6 @@ async function run() {
             }
         });
 
-        // ২. নির্দিষ্ট ইউজারের রোল চেক করা
         app.get('/users/role/:email', async (req, res) => {
             try {
                 const email = req.params.email;
@@ -132,7 +129,6 @@ async function run() {
         // PRODUCTS RELATED APIS
         // ==========================================
 
-        // অল প্রোডাক্ট রিড (পাবলিক ক্যাটালগ ফিল্টারিং ও পেজিনেশন সহ)
         app.get('/products', async (req, res) => {
             try {
                 const page = parseInt(req.query.page) || 1;
@@ -175,7 +171,6 @@ async function run() {
             }
         });
 
-        // 📥 ফ্রন্ট-এন্ড ফরমের সাথে ডাটাবেজ সিঙ্ক করার মেইন এপিআই রাউট
         app.post('/products', verifyToken, async (req, res) => {
             try {
                 const productData = req.body;
@@ -208,7 +203,6 @@ async function run() {
             }
         });
 
-        // সেলারের নিজস্ব প্রোডাক্টগুলো ড্যাশবোর্ডে দেখার রাউট
         app.get('/products/seller/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
@@ -223,7 +217,6 @@ async function run() {
             }
         });
 
-        // প্রোডাক্ট ডিলিট করার রাউট
         app.delete('/products/:id', verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
@@ -235,7 +228,6 @@ async function run() {
             }
         });
 
-        // সিঙ্গেল প্রোডাক্ট আইডি দিয়ে খোঁজার রাউট
         app.get('/products/:id', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -447,8 +439,8 @@ async function run() {
             res.send('ReSell Hub Server is running smoothly!');
         });
 
-    } {
-        // Keep connection alive
+    } finally {
+        // ✅ গ্লোবাল ব্লকের ভেতর Finally কি-ওয়ার্ড ফিক্সড
     }
 }
 run().catch(console.dir);
