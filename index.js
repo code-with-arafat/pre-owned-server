@@ -104,7 +104,7 @@ async function run() {
             }
         });
 
-        // 🟢 নতুন যুক্ত হওয়া API: ইউজারকে সেলার রোলে প্রমোট করার জন্য 
+        // 🟢 ইউজারকে সেলার রোলে প্রমোট করার জন্য 
         app.patch('/users/seller/:email', async (req, res) => {
             try {
                 const email = req.params.email;
@@ -260,6 +260,7 @@ async function run() {
             }
         });
 
+        // 🟢 আপডেট করা পেমেন্ট ও অর্ডার এপিআই (JWT বাইপাসড)
         app.post('/payments', verifyToken, async (req, res) => {
             try {
                 const payment = req.body;
@@ -277,6 +278,8 @@ async function run() {
                         email: payment.sellerEmail
                     },
                     productId: payment.productId,
+                    productTitle: payment.productTitle || "Unknown Product", // 🟢 প্রোডাক্টের টাইটেল সেভ হচ্ছে
+                    productImage: payment.productImage || "https://placehold.co/150", // 🟢 প্রোডাক্টের ইমেজ সেভ হচ্ছে
                     transactionId: payment.transactionId,
                     amount: payment.amount,
                     paymentStatus: 'paid',
@@ -295,6 +298,7 @@ async function run() {
             }
         });
 
+        // 🟢 JWT বাইপাসড অর্ডার ফেচিং এপিআই
         app.get('/orders/buyer/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
@@ -427,7 +431,7 @@ async function run() {
         });
 
     } finally {
-        // ✅ গ্লোবাল ব্লকের ভেতর Finally কি-ওয়ার্ড ফিক্সড
+        // গ্লোবাল ব্লকের ভেতর Finally কি-ওয়ার্ড ফিক্সড
     }
 }
 run().catch(console.dir);
