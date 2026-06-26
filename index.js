@@ -8,7 +8,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const port = process.env.PORT || 5000;
 
-// ✅ ঝামেলাহীন CORS কনফিগারেশন (লোকাল ও লাইভ দুই জায়গাতেই বডি ডাটা পাস করবে)
+// ✅ ঝামেলাহীন CORS কনফিগারেশন (লোকাল ও লাইভ দুই জায়গাতেই বডি ডাটা পাস করবে)
 app.use(cors({
     origin: function (origin, callback) {
         callback(null, true);
@@ -57,7 +57,7 @@ async function run() {
 
     console.log("Successfully connected to MongoDB!");
 
-    // Admin Verification Middleware (রোল বেসড অথরাইজেশন - কালেকশন ডিক্লেয়ারেশনের নিচে আনা হয়েছে)
+    // Admin Verification Middleware (রোল বেসড অথরাইজেশন)
     const verifyAdmin = async (req, res, next) => {
         const email = req.decoded.email;
         const query = { email: email };
@@ -76,8 +76,7 @@ async function run() {
     // ১. ইউজার ক্রিয়েট বা সেভ করা (Upsert Mechanism with Safe Fallback)
     app.put('/users', async (req, res) => {
         try {
-            const user = req.body || {}; // 👈 বডি নাল বা আনডিফাইন্ড হলে খালি অবজেক্ট নেবে
-            
+            const user = req.body || {}; 
             if (!user.email) {
                 return res.status(400).send({ success: false, message: 'Email is required' });
             }
@@ -85,13 +84,12 @@ async function run() {
             const query = { email: user.email };
             const options = { upsert: true };
             
-            // ডাটাবেজে ইউজার অলরেডি থাকলে তার রোল যেন ডাইনামিকালি আপডেট হতে পারে
             const updateDoc = {
                 $set: {
                     name: user.name || "Anonymous",
                     email: user.email,
                     photo: user.photo || "https://placehold.co/150",
-                    role: user.role || 'buyer', // 👈 ফ্রন্টএন্ড থেকে পাঠানো রোল সেট হবে, না থাকলে buyer
+                    role: user.role || 'buyer', 
                     status: 'active'
                 },
             };
@@ -120,6 +118,7 @@ async function run() {
     // PRODUCTS RELATED APIS
     // ==========================================
 
+    // অল প্রোডাক্ট রিড (পাবলিক ক্যাটালগ ফিল্টারিং ও পেজিনেশন সহ)
     app.get('/products', async (req, res) => {
         try {
             const page = parseInt(req.query.page) || 1;
@@ -162,20 +161,41 @@ async function run() {
         }
     });
 
+    // 📥 ফ্রন্ট-এন্ড ফরমের সাথে ডাটাবেজ সিঙ্ক করার মেইন এপিআই রাউট (UPDATED)
     app.post('/products', verifyToken, async (req, res) => {
         try {
-            const product = req.body;
-            const result = await productsCollection.insertOne({
-                ...product,
+            const productData = req.body;
+            
+            // ডাটাবেজে রাইট করার আগে ডাটা টাইপ অবজেক্ট ফরমেটিং স্টাবিলিটি
+            const newProduct = {
+                title: productData.title,
+                category: productData.category,
+                condition: productData.condition,
+                price: parseFloat(productData.price) || 0,
+                originalPrice: parseFloat(productData.originalPrice) || 0,
+                yearsOfUse: productData.yearsOfUse,
+                location: productData.location,
+                phone: productData.phone,
+                images: productData.images || [],
+                description: productData.description,
+                sellerInfo: {
+                    userId: productData.sellerInfo?.userId,
+                    name: productData.sellerInfo?.name,
+                    email: productData.sellerInfo?.email
+                },
                 status: 'available',
                 createdAt: new Date()
-            });
+            };
+
+            const result = await productsCollection.insertOne(newProduct);
             res.send(result);
         } catch (error) {
+            console.error("Error inside POST /products:", error);
             res.status(500).send({ message: error.message });
         }
     });
 
+    // সেলারের নিজস্ব প্রোডাক্টগুলো ড্যাশবোর্ডে দেখার রাউট
     app.get('/products/seller/:email', verifyToken, async (req, res) => {
         try {
             const email = req.params.email;
@@ -190,6 +210,7 @@ async function run() {
         }
     });
 
+    // প্রোডাক্ট ডিলিট করার রাউট
     app.delete('/products/:id', verifyToken, async (req, res) => {
         try {
             const id = req.params.id;
@@ -201,6 +222,7 @@ async function run() {
         }
     });
 
+    // সিঙ্গেল প্রোডাক্ট আইডি দিয়ে খোঁজার রাউট
     app.get('/products/:id', async (req, res) => {
         try {
             const id = req.params.id;
@@ -217,10 +239,11 @@ async function run() {
     // ORDERS & STRIPE PAYMENT APIS
     // ==========================================
 
+    // স্ট্রাইপ পেমেন্ট ইনটেন্ট তৈরি করা (Floating value round ফিক্সড)
     app.post('/create-payment-intent', verifyToken, async (req, res) => {
         try {
             const { price } = req.body;
-            const amount = parseInt(price * 100); 
+            const amount = Math.round(parseFloat(price) * 100); // 👈 দশমিকের গুণফল রাউন্ড করার জন্য
             
             if (!price || amount < 1) {
                 return res.status(400).send({ message: 'Invalid price amount' });
@@ -240,6 +263,7 @@ async function run() {
         }
     });
 
+    // পেমেন্ট সাকসেসফুল হলে কালেকশন আপডেট করা
     app.post('/payments', verifyToken, async (req, res) => {
         try {
             const payment = req.body;
@@ -275,6 +299,7 @@ async function run() {
         }
     });
 
+    // বায়ারের অর্ডার দেখার রাউট
     app.get('/orders/buyer/:email', verifyToken, async (req, res) => {
         try {
             const email = req.params.email;
@@ -289,6 +314,7 @@ async function run() {
         }
     });
 
+    // সেলারের অর্ডার রিকোয়েস্ট দেখার রাউট
     app.get('/orders/seller/:email', verifyToken, async (req, res) => {
         try {
             const email = req.params.email;
@@ -303,6 +329,7 @@ async function run() {
         }
     });
 
+    // অর্ডারের স্ট্যাটাস মডিফাই করা (যেমন- Shipped, Delivered)
     app.patch('/orders/:id', verifyToken, async (req, res) => {
         try {
             const id = req.params.id;
