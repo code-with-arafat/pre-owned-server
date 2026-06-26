@@ -8,12 +8,14 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const port = process.env.PORT || 5000;
 
-// ✅ ঝামেলাহীন CORS কনফিগারেশন (লোকাল ও লাইভ দুই জায়গাতেই বডি ডাটা পাস করবে)
+// ✅ ঝামেলাহীন ডাইনামিক CORS কনফিগারেশন
 app.use(cors({
     origin: function (origin, callback) {
         callback(null, true);
     },
-    credentials: true
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
 }));
 app.use(express.json());
 
@@ -24,8 +26,10 @@ const verifyToken = (req, res, next) => {
     }
 
     const token = req.headers.authorization.split(' ')[1];
+    // .env এর সিক্রেট কি না থাকলে ব্যাকআপ সিক্রেট ব্যবহার করবে যেন ক্র্যাশ না করে
+    const secret = process.env.JWT_SECRET || 'fallback-secret-key-for-assignment';
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    jwt.verify(token, secret, (err, decoded) => {
         if (err) {
             return res.status(401).send({ message: 'Unauthorized access' });
         }
@@ -59,7 +63,10 @@ async function run() {
 
         // Admin Verification Middleware (রোল বেসড অথরাইজেশন)
         const verifyAdmin = async (req, res, next) => {
-            const email = req.decoded.email;
+            const email = req.decoded?.email;
+            if (!email) {
+                return res.status(401).send({ message: 'Unauthorized access' });
+            }
             const query = { email: email };
             const user = await usersCollection.findOne(query);
             const isAdmin = user?.role === 'admin';
@@ -75,11 +82,12 @@ async function run() {
 
         app.post('/jwt', async (req, res) => {
             const user = req.body;
-            const token = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '1h' });
+            const secret = process.env.JWT_SECRET || 'fallback-secret-key-for-assignment';
+            const token = jwt.sign(user, secret, { expiresIn: '1h' });
             res.send({ token });
         });
 
-        // ১. ইউজার ক্রিয়েট বা সেভ করা (Upsert Mechanism with Safe Fallback)
+        // ১. ইউজার ক্রিয়েট বা সেভ করা (Upsert Mechanism)
         app.put('/users', async (req, res) => {
             try {
                 const user = req.body || {};
@@ -167,12 +175,11 @@ async function run() {
             }
         });
 
-        // 📥 ফ্রন্ট-এন্ড ফরমের সাথে ডাটাবেজ সিঙ্ক করার মেইন এপিআই রাউট (UPDATED)
+        // 📥 ফ্রন্ট-এন্ড ফরমের সাথে ডাটাবেজ সিঙ্ক করার মেইন এপিআই রাউট
         app.post('/products', verifyToken, async (req, res) => {
             try {
                 const productData = req.body;
 
-                // ডাটাবেজে রাইট করার আগে ডাটা টাইপ অবজেক্ট ফরমেটিং স্টাবিলিটি
                 const newProduct = {
                     title: productData.title,
                     category: productData.category,
@@ -228,7 +235,7 @@ async function run() {
             }
         });
 
-        // সিঙ্গেল প্রোডাক্ট আইডি দিয়ে খোঁজার রাউট
+        // সিঙ্গেল প্রোডাক্ট আইডি দিয়ে খোঁজার রাউট
         app.get('/products/:id', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -245,11 +252,10 @@ async function run() {
         // ORDERS & STRIPE PAYMENT APIS
         // ==========================================
 
-        // স্ট্রাইপ পেমেন্ট ইনটেন্ট তৈরি করা (Floating value round ফিক্সড)
         app.post('/create-payment-intent', verifyToken, async (req, res) => {
             try {
                 const { price } = req.body;
-                const amount = Math.round(parseFloat(price) * 100); // 👈 দশমিকের গুণফল রাউন্ড করার জন্য
+                const amount = Math.round(parseFloat(price) * 100);
 
                 if (!price || amount < 1) {
                     return res.status(400).send({ message: 'Invalid price amount' });
@@ -269,7 +275,6 @@ async function run() {
             }
         });
 
-        // পেমেন্ট সাকসেসফুল হলে কালেকশন আপডেট করা
         app.post('/payments', verifyToken, async (req, res) => {
             try {
                 const payment = req.body;
@@ -305,7 +310,6 @@ async function run() {
             }
         });
 
-        // বায়ারের অর্ডার দেখার রাউট
         app.get('/orders/buyer/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
@@ -320,7 +324,6 @@ async function run() {
             }
         });
 
-        // সেলারের অর্ডার রিকোয়েস্ট দেখার রাউট
         app.get('/orders/seller/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
@@ -335,7 +338,6 @@ async function run() {
             }
         });
 
-        // অর্ডারের স্ট্যাটাস মডিফাই করা (যেমন- Shipped, Delivered)
         app.patch('/orders/:id', verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
@@ -353,7 +355,7 @@ async function run() {
         // ADMIN DASHBOARD & ANALYTICS APIS
         // ==========================================
 
-        app.get('/admin-stats', async (req, res) => {
+        app.get('/admin-stats', verifyToken, verifyAdmin, async (req, res) => {
             try {
                 const totalUsers = await usersCollection.estimatedDocumentCount();
                 const totalProducts = await productsCollection.estimatedDocumentCount();
@@ -445,7 +447,7 @@ async function run() {
             res.send('ReSell Hub Server is running smoothly!');
         });
 
-    } finally {
+    } {
         // Keep connection alive
     }
 }
