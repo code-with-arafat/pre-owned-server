@@ -104,6 +104,23 @@ async function run() {
             }
         });
 
+        // 🟢 নতুন যুক্ত হওয়া API: ইউজারকে সেলার রোলে প্রমোট করার জন্য 
+        app.patch('/users/seller/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+                const filter = { email: email };
+                const updateDoc = {
+                    $set: {
+                        role: 'seller'
+                    }
+                };
+                const result = await usersCollection.updateOne(filter, updateDoc);
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
         // ==========================================
         // PRODUCTS RELATED APIS
         // ==========================================
